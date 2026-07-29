@@ -1,0 +1,936 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>스마트 비밀 자리 배치 시스템</title>
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- FontAwesome Icons -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <!-- Canvas Confetti -->
+    <script src="https://cdn.jsdelivr.net/npm/canvas-confetti@1.6.0/dist/confetti.browser.min.js"></script>
+    <!-- Google Fonts (Noto Sans KR) -->
+    <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@400;500;700;900&display=swap" rel="stylesheet">
+    
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    fontFamily: {
+                        sans: ['Noto Sans KR', 'sans-serif'],
+                    },
+                    colors: {
+                        chalkboard: '#2d4a3e',
+                        desk: '#e2a85c',
+                        deskBorder: '#c4893b'
+                    }
+                }
+            }
+        }
+    </script>
+    <style>
+        .desk-card {
+            transition: transform 0.3s ease, box-shadow 0.3s ease;
+            transform-style: preserve-3d;
+        }
+        .desk-card.shuffling {
+            animation: pulse 0.15s infinite alternate;
+        }
+        @keyframes pulse {
+            0% { transform: scale(0.98); }
+            100% { transform: scale(1.02); }
+        }
+        /* Custom Scrollbar */
+        ::-webkit-scrollbar {
+            width: 6px;
+            height: 6px;
+        }
+        ::-webkit-scrollbar-track {
+            background: #f1f1f1;
+            border-radius: 4px;
+        }
+        ::-webkit-scrollbar-thumb {
+            background: #cbd5e1;
+            border-radius: 4px;
+        }
+        ::-webkit-scrollbar-thumb:hover {
+            background: #94a3b8;
+        }
+        @media print {
+            .no-print { display: none !important; }
+            .print-only { display: block !important; }
+            body { background: white; color: black; }
+        }
+    </style>
+</head>
+<body class="bg-slate-100 text-slate-800 font-sans min-h-screen flex flex-col justify-between">
+
+    <!-- Navigation Header -->
+    <header class="bg-indigo-700 text-white shadow-lg sticky top-0 z-30 no-print">
+        <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-16 flex items-center justify-between">
+            <div class="flex items-center space-x-3">
+                <div class="bg-white text-indigo-700 p-2 rounded-lg font-black text-xl shadow">
+                    <i class="fa-solid fa-graduation-cap"></i>
+                </div>
+                <div>
+                    <h1 class="text-xl font-bold tracking-wide">스마트 자리 배치기</h1>
+                    <p class="text-xs text-indigo-200">공정하고 신나는 클래스 세팅</p>
+                </div>
+            </div>
+            
+            <div class="flex items-center space-x-3">
+                <button id="btn-print" onclick="window.print()" class="bg-indigo-600 hover:bg-indigo-500 text-white px-3 py-2 rounded-lg text-sm font-medium transition flex items-center gap-1.5 shadow-sm">
+                    <i class="fa-solid fa-print"></i>
+                    <span class="hidden sm:inline">인쇄 / PDF</span>
+                </button>
+                <!-- 교사 미준수 경고 알림 바 (충돌 발생 시 표시) -->
+                <button id="btn-violation-alert" onclick="openViolationModal()" class="hidden bg-amber-500 hover:bg-amber-400 text-white px-3 py-2 rounded-lg text-xs font-bold transition flex items-center gap-1 shadow-sm animate-bounce">
+                    <i class="fa-solid fa-triangle-exclamation"></i>
+                    <span id="txt-violation-count">미준수 0건</span>
+                </button>
+                <!-- 은밀한 톱니바퀴 설정 버튼 -->
+                <button id="btn-teacher-settings" onclick="openTeacherModal()" title="설정" class="bg-indigo-600 hover:bg-indigo-500 text-white p-2.5 rounded-lg text-sm transition flex items-center justify-center shadow-sm">
+                    <i class="fa-solid fa-gear text-lg"></i>
+                </button>
+            </div>
+        </div>
+    </header>
+
+    <!-- Main Content Container -->
+    <main class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6 flex-grow w-full">
+        
+        <div class="grid grid-cols-1 lg:grid-cols-4 gap-6">
+            
+            <!-- Left Control Panel -->
+            <div class="lg:col-span-1 space-y-5 no-print">
+                <!-- Grid Dimensions Setup -->
+                <div class="bg-white p-5 rounded-2xl shadow-sm border border-slate-200">
+                    <h2 class="text-base font-bold text-slate-800 mb-3 flex items-center gap-2">
+                        <i class="fa-solid fa-border-all text-indigo-600"></i>
+                        배치 기본 설정
+                    </h2>
+                    <div class="grid grid-cols-2 gap-3 mb-3">
+                        <div>
+                            <label class="block text-xs font-semibold text-slate-600 mb-1">가로 줄 (열)</label>
+                            <input type="number" id="input-cols" min="1" max="10" value="6" onchange="updateGridDimensions()" class="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm focus:ring-2 focus:ring-indigo-500 focus:outline-none">
+                        </div>
+                        <div>
+                            <label class="block text-xs font-semibold text-slate-600 mb-1">세로 줄 (행)</label>
+                            <input type="number" id="input-rows" min="1" max="10" value="5" onchange="updateGridDimensions()" class="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm focus:ring-2 focus:ring-indigo-500 focus:outline-none">
+                        </div>
+                    </div>
+                    <div class="text-xs text-slate-500 flex justify-between items-center bg-slate-50 p-2 rounded-lg border border-slate-100">
+                        <span>총 좌석 수:</span>
+                        <span id="txt-total-seats" class="font-bold text-indigo-600">30석</span>
+                    </div>
+                </div>
+
+                <!-- Student List Input -->
+                <div class="bg-white p-5 rounded-2xl shadow-sm border border-slate-200">
+                    <div class="flex items-center justify-between mb-2">
+                        <h2 class="text-base font-bold text-slate-800 flex items-center gap-2">
+                            <i class="fa-solid fa-users text-indigo-600"></i>
+                            학생 명단 (<span id="txt-student-count">0</span>명)
+                        </h2>
+                        <button onclick="loadSampleData()" class="text-xs text-indigo-600 hover:underline font-medium">예시 불러오기</button>
+                    </div>
+                    <p class="text-xs text-slate-400 mb-2">이름을 줄바꿈(엔터)이나 쉼표로 구분해 입력하세요.</p>
+                    <textarea id="input-students" rows="9" oninput="parseStudentList()" placeholder="김철수&#10;이영희&#10;박민수..." class="w-full p-3 border border-slate-300 rounded-xl text-sm focus:ring-2 focus:ring-indigo-500 focus:outline-none resize-none font-medium leading-relaxed"></textarea>
+                    
+                    <div class="mt-3 flex items-center justify-between">
+                        <button onclick="clearStudents()" class="text-xs text-rose-500 hover:text-rose-700 font-medium">
+                            <i class="fa-solid fa-trash-can mr-1"></i>명단 초기화
+                        </button>
+                    </div>
+                </div>
+
+                <!-- Start Action Button -->
+                <button id="btn-start-assign" onclick="startSeatAssignment()" class="w-full py-4 bg-gradient-to-r from-indigo-600 via-indigo-700 to-purple-700 hover:from-indigo-500 hover:to-purple-600 text-white font-extrabold text-lg rounded-2xl shadow-lg hover:shadow-indigo-200 transition transform active:scale-95 flex items-center justify-center gap-3">
+                    <i class="fa-solid fa-dice text-2xl animate-spin-slow"></i>
+                    <span>자리 배치 시작하기!</span>
+                </button>
+            </div>
+
+            <!-- Right Main Area (Chalkboard & Desks) -->
+            <div class="lg:col-span-3 space-y-4">
+                
+                <!-- Front Chalkboard -->
+                <div class="bg-chalkboard text-white py-3 px-6 rounded-2xl shadow-md border-4 border-amber-800 text-center relative overflow-hidden">
+                    <div class="absolute left-4 top-1/2 transform -translate-y-1/2 text-xs text-emerald-200/60 font-serif">Front</div>
+                    <span class="text-lg font-bold tracking-widest text-emerald-100 flex items-center justify-center gap-2">
+                        <i class="fa-solid fa-chalkboard text-amber-300"></i> [ 교 탁 (칠 판) ]
+                    </span>
+                    <div class="absolute right-4 top-1/2 transform -translate-y-1/2 text-xs text-emerald-200/60 font-serif">Screen</div>
+                </div>
+
+                <!-- Classroom Grid Container -->
+                <div class="bg-white p-6 rounded-2xl shadow-sm border border-slate-200 min-h-[480px] flex flex-col justify-center">
+                    <p class="text-xs text-slate-400 mb-3 text-center no-print">
+                        💡 자리를 클릭하면 <span class="text-rose-500 font-bold">X (빈자리 고정)</span> 처리 / 해제할 수 있습니다.
+                    </p>
+                    <div id="classroom-grid" class="grid gap-3 sm:gap-4 justify-center mx-auto w-full">
+                        <!-- Dynamic Seat Cards Generated Here -->
+                    </div>
+                </div>
+
+                <!-- Status Banner / Notes -->
+                <div class="flex items-center justify-between text-xs text-slate-500 px-2 no-print">
+                    <div class="flex items-center gap-2">
+                        <span class="w-3 h-3 rounded-full bg-indigo-500 inline-block"></span> 일반 학생
+                        <span class="w-3 h-3 rounded-full bg-rose-200 border border-rose-400 inline-block ml-2"></span> X (고정 빈자리)
+                        <span class="w-3 h-3 rounded-full bg-slate-300 inline-block ml-2"></span> 빈 자리는 (빈자리)
+                    </div>
+                    <div>
+                        <span id="secret-status-indicator" class="text-slate-400 opacity-80 cursor-pointer" onclick="openTeacherModal()">
+                            <i class="fa-solid fa-lock text-xs mr-1"></i>교사 제약 조건 검증 완료
+                        </span>
+                    </div>
+                </div>
+
+            </div>
+
+        </div>
+
+    </main>
+
+    <!-- Teacher Settings Modal -->
+    <div id="modal-teacher" class="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-50 flex items-center justify-center hidden p-4">
+        <div class="bg-white w-full max-w-3xl rounded-2xl shadow-2xl overflow-hidden flex flex-col max-h-[90vh]">
+            
+            <!-- Modal Header -->
+            <div class="bg-slate-800 text-white px-6 py-4 flex items-center justify-between">
+                <div class="flex items-center gap-2">
+                    <i class="fa-solid fa-file-excel text-emerald-400 text-xl"></i>
+                    <h2 class="text-lg font-bold">교사 비밀 설정 (시트 일괄 등록)</h2>
+                </div>
+                <button onclick="closeTeacherModal()" class="text-slate-400 hover:text-white transition">
+                    <i class="fa-solid fa-xmark text-xl"></i>
+                </button>
+            </div>
+
+            <!-- Modal Sub-header Format Guide -->
+            <div class="bg-indigo-50 border-b border-indigo-100 px-6 py-3 text-xs text-indigo-900 space-y-1">
+                <div class="flex items-center gap-2 font-bold text-indigo-700">
+                    <i class="fa-solid fa-circle-info"></i>
+                    <span>엑셀 / 구글 시트 복사·붙여넣기 지원 양식</span>
+                </div>
+                <p class="text-slate-600 font-mono bg-white p-2 rounded border border-indigo-200 leading-relaxed">
+                    <strong class="text-indigo-600">입력 형식:</strong> 학생이름 / 지정석(행-열) / 거리두기 학생(이름)<br>
+                    <span class="text-slate-400">예시 1:</span> 홍길동 / 1-1 / 이영희 <span class="text-slate-400">(홍길동: 1행 1열 고정, 이영희와 거리두기)</span><br>
+                    <span class="text-slate-400">예시 2:</span> 김철수 / null / 박민수, 최동현 <span class="text-slate-400">(김철수: 지정석 없음, 박민수·최동현과 거리두기)</span>
+                </p>
+            </div>
+
+            <!-- Modal Body Content -->
+            <div class="p-6 overflow-y-auto flex-grow space-y-4">
+                
+                <div class="flex items-center justify-between">
+                    <label class="block text-sm font-bold text-slate-800">
+                        <i class="fa-solid fa-table-cells text-emerald-600 mr-1.5"></i>시트 데이터 입력 (줄바꿈 구분)
+                    </label>
+                    <button onclick="loadTeacherSheetSample()" class="text-xs text-indigo-600 hover:underline font-bold flex items-center gap-1">
+                        <i class="fa-solid fa-wand-magic-sparkles"></i> 예시 시트 불러오기
+                    </button>
+                </div>
+
+                <textarea id="input-teacher-sheet" rows="6" oninput="parseTeacherSheet()" placeholder="홍길동 / 1-1 / 이영희&#10;김철수 / null / 박민수, 최동현&#10;이영희 / 2-3 / null" class="w-full p-3.5 border border-slate-300 rounded-xl text-xs sm:text-sm font-mono focus:ring-2 focus:ring-indigo-500 focus:outline-none leading-relaxed bg-slate-50 focus:bg-white transition"></textarea>
+
+                <!-- Live Rule Conflict Warning Box -->
+                <div id="box-conflict-warnings" class="hidden bg-rose-50 border border-rose-300 rounded-xl p-3.5 space-y-1 text-xs text-rose-800">
+                    <div class="font-bold flex items-center gap-1.5 text-rose-700 text-sm">
+                        <i class="fa-solid fa-triangle-exclamation text-rose-600"></i>
+                        <span>규칙 설정 충돌 감지 (<span id="txt-conflict-count">0</span>건)</span>
+                    </div>
+                    <ul id="list-conflict-details" class="list-disc list-inside space-y-0.5 text-rose-700 pl-1 font-medium">
+                        <!-- Dynamic conflict items -->
+                    </ul>
+                </div>
+
+                <!-- Parsed Status / Rules Summary -->
+                <div class="bg-slate-50 p-4 rounded-xl border border-slate-200 space-y-3">
+                    <h4 class="text-xs font-bold text-slate-700 uppercase tracking-wider flex items-center justify-between">
+                        <span><i class="fa-solid fa-list-check text-indigo-600 mr-1"></i> 현재 적용된 규칙 현황</span>
+                        <span id="txt-rules-count" class="text-slate-500 font-normal">고정 0건 / 거리두기 0건</span>
+                    </h4>
+                    
+                    <!-- Fixed Rules Summary -->
+                    <div>
+                        <span class="text-[11px] font-bold text-amber-700 block mb-1">📍 지정석 고정:</span>
+                        <div id="list-fixed-rules" class="space-y-1 max-h-24 overflow-y-auto">
+                            <!-- Rule tags appear here -->
+                        </div>
+                    </div>
+
+                    <!-- Separation Rules Summary -->
+                    <div>
+                        <span class="text-[11px] font-bold text-rose-700 block mb-1">🚫 거리 두기:</span>
+                        <div id="list-avoid-rules" class="space-y-1 max-h-24 overflow-y-auto">
+                            <!-- Avoid tags appear here -->
+                        </div>
+                    </div>
+                </div>
+
+            </div>
+
+            <!-- Modal Footer -->
+            <div class="bg-slate-100 border-t border-slate-200 px-6 py-3 flex justify-between items-center">
+                <button onclick="resetAllRules()" class="text-xs text-rose-600 hover:underline font-medium flex items-center gap-1">
+                    <i class="fa-solid fa-rotate-left"></i> 규칙 전체 초기화
+                </button>
+                <button onclick="closeTeacherModal()" class="px-5 py-2 bg-indigo-600 hover:bg-indigo-700 text-white font-bold rounded-lg text-sm transition shadow-sm flex items-center gap-1.5">
+                    <i class="fa-solid fa-check"></i> 설정 적용 및 닫기
+                </button>
+            </div>
+
+        </div>
+    </div>
+
+    <!-- Unfulfilled Violations Detailed Modal -->
+    <div id="modal-violations" class="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-50 flex items-center justify-center hidden p-4">
+        <div class="bg-white w-full max-w-md rounded-2xl shadow-2xl overflow-hidden flex flex-col">
+            <div class="bg-amber-600 text-white px-5 py-3.5 flex items-center justify-between">
+                <div class="flex items-center gap-2 font-bold">
+                    <i class="fa-solid fa-shield-cat text-amber-200 text-xl"></i>
+                    <span>미준수 제약조건 안내 (교사 확인용)</span>
+                </div>
+                <button onclick="closeViolationModal()" class="text-amber-200 hover:text-white transition">
+                    <i class="fa-solid fa-xmark text-lg"></i>
+                </button>
+            </div>
+            <div class="p-5 text-xs text-slate-700 space-y-3">
+                <p class="leading-relaxed bg-amber-50 p-2.5 rounded-lg border border-amber-200 text-amber-900 font-medium">
+                    ⚠️ 제약조건 간 충돌(모순) 또는 좌석 수 부족으로 인해 전체 규칙을 100% 충족할 수 없어, <strong>최소한의 위반으로 최적 배치</strong>되었습니다.
+                </p>
+                <div class="space-y-1.5">
+                    <span class="font-bold text-slate-800 block text-xs">지켜지지 못한 제약조건 목록:</span>
+                    <ul id="list-unfulfilled-details" class="space-y-1.5 max-h-48 overflow-y-auto pr-1">
+                        <!-- Dynamic items -->
+                    </ul>
+                </div>
+            </div>
+            <div class="bg-slate-100 px-5 py-3 text-right">
+                <button onclick="closeViolationModal()" class="px-4 py-1.5 bg-slate-700 hover:bg-slate-800 text-white font-bold rounded-lg text-xs transition">
+                    확인
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // Global App State
+        const state = {
+            rows: 5,
+            cols: 6,
+            students: [],
+            fixedRules: [], // Array of { studentName, row, col }
+            avoidRules: [], // Array of [ studentA, studentB ]
+            disabledSeats: new Set(), // Set of "row-col" strings for X-marked seats
+            currentGrid: [], // 2D array of student names
+            isShuffling: false,
+            conflicts: [], // Live detection of contradictory rules
+            lastViolations: [] // Broken rules after assignment solver
+        };
+
+        // Sound Effects Generator using Web Audio API
+        const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+        
+        function playTickSound() {
+            try {
+                if (audioCtx.state === 'suspended') audioCtx.resume();
+                const osc = audioCtx.createOscillator();
+                const gain = audioCtx.createGain();
+                osc.type = 'sine';
+                osc.frequency.setValueAtTime(400 + Math.random() * 200, audioCtx.currentTime);
+                gain.gain.setValueAtTime(0.05, audioCtx.currentTime);
+                gain.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + 0.05);
+                osc.connect(gain);
+                gain.connect(audioCtx.destination);
+                osc.start();
+                osc.stop(audioCtx.currentTime + 0.05);
+            } catch (e) {}
+        }
+
+        function playSuccessSound() {
+            try {
+                if (audioCtx.state === 'suspended') audioCtx.resume();
+                const now = audioCtx.currentTime;
+                [261.63, 329.63, 392.00, 523.25].forEach((freq, i) => {
+                    const osc = audioCtx.createOscillator();
+                    const gain = audioCtx.createGain();
+                    osc.type = 'triangle';
+                    osc.frequency.setValueAtTime(freq, now + i * 0.08);
+                    gain.gain.setValueAtTime(0.1, now + i * 0.08);
+                    gain.gain.exponentialRampToValueAtTime(0.001, now + i * 0.08 + 0.3);
+                    osc.connect(gain);
+                    gain.connect(audioCtx.destination);
+                    osc.start(now + i * 0.08);
+                    osc.stop(now + i * 0.08 + 0.3);
+                });
+            } catch (e) {}
+        }
+
+        window.addEventListener('DOMContentLoaded', () => {
+            loadSampleData();
+            updateGridDimensions();
+        });
+
+        function loadSampleData() {
+            const sampleList = [
+                "김철수", "이영희", "박민수", "정지원", "최동현", "강서연",
+                "윤도현", "임수빈", "한지민", "오세훈", "신유진", "권태양",
+                "황보경", "송민재", "전은지", "홍길동", "류현우", "문지아",
+                "배성민", "백지혜", "조현우", "서하은", "고동건", "성유리",
+                "손흥민", "김연아", "박지성", "이강인"
+            ];
+            document.getElementById('input-students').value = sampleList.join('\n');
+            parseStudentList();
+        }
+
+        function clearStudents() {
+            document.getElementById('input-students').value = '';
+            parseStudentList();
+        }
+
+        function parseStudentList() {
+            const rawText = document.getElementById('input-students').value;
+            state.students = rawText
+                .split(/[\n,]+/)
+                .map(s => s.trim())
+                .filter(s => s.length > 0);
+            
+            document.getElementById('txt-student-count').innerText = state.students.length;
+            renderClassroomGridBlank();
+            validateTeacherRules();
+        }
+
+        function updateGridDimensions() {
+            state.rows = parseInt(document.getElementById('input-rows').value) || 5;
+            state.cols = parseInt(document.getElementById('input-cols').value) || 6;
+            
+            document.getElementById('txt-total-seats').innerText = `${state.rows * state.cols}석`;
+            renderClassroomGridBlank();
+            validateTeacherRules();
+        }
+
+        function renderClassroomGridBlank() {
+            const gridContainer = document.getElementById('classroom-grid');
+            gridContainer.style.gridTemplateColumns = `repeat(${state.cols}, minmax(0, 1fr))`;
+            gridContainer.innerHTML = '';
+
+            let studentIdx = 0;
+            for (let r = 0; r < state.rows; r++) {
+                for (let c = 0; c < state.cols; c++) {
+                    const studentName = state.students[studentIdx] || "";
+                    const card = createDeskCard(r, c, studentName || (studentIdx < state.students.length ? "" : "(빈 자리)"));
+                    gridContainer.appendChild(card);
+                    studentIdx++;
+                }
+            }
+        }
+
+        function createDeskCard(r, c, name = "") {
+            const key = `${r}-${c}`;
+            const isDisabled = state.disabledSeats.has(key);
+
+            const div = document.createElement('div');
+            
+            if (isDisabled) {
+                div.className = `desk-card bg-rose-50 border-2 border-rose-300 rounded-xl p-2 sm:p-3 text-center shadow-sm flex flex-col justify-between items-center min-h-[70px] sm:min-h-[85px] relative cursor-pointer hover:border-rose-400 transition select-none`;
+            } else {
+                div.className = `desk-card bg-white border-2 border-slate-200 rounded-xl p-2 sm:p-3 text-center shadow-sm flex flex-col justify-between items-center min-h-[70px] sm:min-h-[85px] relative cursor-pointer hover:border-indigo-400 transition select-none`;
+            }
+
+            div.dataset.row = r;
+            div.dataset.col = c;
+            div.onclick = () => toggleSeatDisabled(r, c);
+
+            const coordBadge = document.createElement('span');
+            coordBadge.className = 'text-[10px] font-mono text-slate-400 absolute top-1.5 left-2 no-print';
+            coordBadge.innerText = `${r + 1}-${c + 1}`;
+
+            const nameBox = document.createElement('div');
+            
+            if (isDisabled) {
+                nameBox.className = 'desk-name text-xs sm:text-sm font-black text-rose-500 my-auto break-all px-1 flex flex-col items-center gap-0.5';
+                nameBox.innerHTML = `<i class="fa-solid fa-xmark text-xl text-rose-500"></i><span>X (빈자리)</span>`;
+            } else {
+                nameBox.className = 'desk-name text-sm sm:text-base font-bold text-slate-800 my-auto break-all px-1';
+                nameBox.innerText = name;
+            }
+
+            div.appendChild(coordBadge);
+            div.appendChild(nameBox);
+            return div;
+        }
+
+        function toggleSeatDisabled(r, c) {
+            if (state.isShuffling) return;
+
+            const key = `${r}-${c}`;
+            if (state.disabledSeats.has(key)) {
+                state.disabledSeats.delete(key);
+            } else {
+                state.disabledSeats.add(key);
+            }
+
+            renderClassroomGridBlank();
+            validateTeacherRules();
+        }
+
+        function openTeacherModal() {
+            const sheetInput = document.getElementById('input-teacher-sheet');
+            if (state.fixedRules.length > 0 || state.avoidRules.length > 0) {
+                sheetInput.value = generateSheetTextFromRules();
+            }
+            parseTeacherSheet();
+            document.getElementById('modal-teacher').classList.remove('hidden');
+        }
+
+        function closeTeacherModal() {
+            document.getElementById('modal-teacher').classList.add('hidden');
+        }
+
+        function parseTeacherSheet() {
+            const text = document.getElementById('input-teacher-sheet').value;
+            const lines = text.split('\n');
+            
+            const newFixedRules = [];
+            const newAvoidRules = [];
+
+            lines.forEach(line => {
+                const trimmed = line.trim();
+                if (!trimmed || trimmed.startsWith('#')) return;
+
+                let parts = [];
+                if (trimmed.includes('\t')) {
+                    parts = trimmed.split('\t');
+                } else if (trimmed.includes('/')) {
+                    parts = trimmed.split('/');
+                } else if (trimmed.includes('|')) {
+                    parts = trimmed.split('|');
+                } else {
+                    parts = trimmed.split(',');
+                }
+
+                parts = parts.map(p => p.trim());
+                if (parts.length < 1 || !parts[0]) return;
+
+                const name = parts[0];
+
+                // Part 1: Fixed Seat
+                if (parts.length >= 2) {
+                    const seatStr = parts[1].toLowerCase();
+                    if (seatStr && seatStr !== 'null' && seatStr !== '-' && seatStr !== '없음' && seatStr !== 'x') {
+                        const match = seatStr.match(/(\d+)\s*[-_,\s행열]*\s*(\d+)?/);
+                        if (match) {
+                            const r = parseInt(match[1]) - 1;
+                            const c = match[2] ? parseInt(match[2]) - 1 : 0;
+                            if (r >= 0 && r < state.rows && c >= 0 && c < state.cols) {
+                                newFixedRules.push({ studentName: name, row: r, col: c });
+                            }
+                        }
+                    }
+                }
+
+                // Part 2: Avoid Targets
+                if (parts.length >= 3) {
+                    const avoidStr = parts[2];
+                    if (avoidStr && avoidStr.toLowerCase() !== 'null' && avoidStr !== '-' && avoidStr !== '없음') {
+                        const targets = avoidStr.split(/[,/&]+/).map(s => s.trim()).filter(Boolean);
+                        targets.forEach(target => {
+                            if (target && target !== name) {
+                                const exists = newAvoidRules.some(
+                                    p => (p[0] === name && p[1] === target) || (p[0] === target && p[1] === name)
+                                );
+                                if (!exists) {
+                                    newAvoidRules.push([name, target]);
+                                }
+                            }
+                        });
+                    }
+                }
+            });
+
+            state.fixedRules = newFixedRules;
+            state.avoidRules = newAvoidRules;
+            
+            validateTeacherRules();
+            renderRuleLists();
+        }
+
+        // Real-time Detection of Contradictory Rules
+        function validateTeacherRules() {
+            const conflicts = [];
+
+            // 0. Check if student names exist in the active student list
+            const studentSet = new Set(state.students);
+            const missingNames = new Set();
+
+            state.fixedRules.forEach(rule => {
+                if (!studentSet.has(rule.studentName)) {
+                    missingNames.add(rule.studentName);
+                }
+            });
+
+            state.avoidRules.forEach(([s1, s2]) => {
+                if (!studentSet.has(s1)) missingNames.add(s1);
+                if (!studentSet.has(s2)) missingNames.add(s2);
+            });
+
+            missingNames.forEach(name => {
+                conflicts.push(`명단 미등록 학생: '${name}' 학생은 현재 학생 명단에 없습니다.`);
+            });
+
+            // 1. Check duplicate fixed seat assignments (Multiple students assigned to same seat)
+            const seatMap = new Map();
+            state.fixedRules.forEach(rule => {
+                const seatKey = `${rule.row}-${rule.col}`;
+                if (seatMap.has(seatKey)) {
+                    conflicts.push(`동일 좌석 중복: ${seatMap.get(seatKey)}님과 ${rule.studentName}님이 모두 [${rule.row + 1}-${rule.col + 1}]에 고정되었습니다.`);
+                } else {
+                    seatMap.set(seatKey, rule.studentName);
+                }
+            });
+
+            // 2. Check fixed seats assigned to Disabled (X) seats
+            state.fixedRules.forEach(rule => {
+                const seatKey = `${rule.row}-${rule.col}`;
+                if (state.disabledSeats.has(seatKey)) {
+                    conflicts.push(`X자 빈자리 충돌: ${rule.studentName}님이 고정 지정된 [${rule.row + 1}-${rule.col + 1}] 자리는 X(빈자리)로 닫혀있습니다.`);
+                }
+            });
+
+            // 3. Check direct conflict: Students assigned to adjacent fixed seats who also have an avoid rule!
+            state.avoidRules.forEach(([s1, s2]) => {
+                const fix1 = state.fixedRules.find(r => r.studentName === s1);
+                const fix2 = state.fixedRules.find(r => r.studentName === s2);
+
+                if (fix1 && fix2) {
+                    const dr = Math.abs(fix1.row - fix2.row);
+                    const dc = Math.abs(fix1.col - fix2.col);
+                    // Adjacent if within 1 seat distance (including diagonal)
+                    if (dr <= 1 && dc <= 1) {
+                        conflicts.push(`지정석-거리두기 충돌: ${s1}([${fix1.row + 1}-${fix1.col + 1}])님과 ${s2}([${fix2.row + 1}-${fix2.col + 1}])님은 인접 지정석에 배치되었으나 서로 거리두기 규칙이 걸려있습니다.`);
+                    }
+                }
+            });
+
+            // 4. Check seat capacity
+            const availableSeats = (state.rows * state.cols) - state.disabledSeats.size;
+            if (state.students.length > availableSeats) {
+                conflicts.push(`정원 초과: 전체 학생 수(${state.students.length}명)가 이용 가능한 좌석 수(${availableSeats}석)보다 많습니다.`);
+            }
+
+            state.conflicts = conflicts;
+            renderConflictBox();
+        }
+
+        function renderConflictBox() {
+            const conflictBox = document.getElementById('box-conflict-warnings');
+            const conflictCountLabel = document.getElementById('txt-conflict-count');
+            const conflictList = document.getElementById('list-conflict-details');
+
+            if (!conflictBox || !conflictList) return;
+
+            if (state.conflicts.length > 0) {
+                conflictBox.classList.remove('hidden');
+                conflictCountLabel.innerText = state.conflicts.length;
+                conflictList.innerHTML = state.conflicts.map(c => `<li>${c}</li>`).join('');
+            } else {
+                conflictBox.classList.add('hidden');
+            }
+        }
+
+        function loadTeacherSheetSample() {
+            const sampleText = "김철수 / 1-1 / 이영희\n박민수 / null / 정지원, 최동현\n이영희 / 2-3 / null\n강서연 / 3-2 / null";
+            document.getElementById('input-teacher-sheet').value = sampleText;
+            parseTeacherSheet();
+        }
+
+        function generateSheetTextFromRules() {
+            const map = new Map();
+            state.students.forEach(name => {
+                map.set(name, { fixed: "null", avoids: [] });
+            });
+
+            state.fixedRules.forEach(r => {
+                if (!map.has(r.studentName)) map.set(r.studentName, { fixed: "null", avoids: [] });
+                map.get(r.studentName).fixed = `${r.row + 1}-${r.col + 1}`;
+            });
+
+            state.avoidRules.forEach(([a, b]) => {
+                if (!map.has(a)) map.set(a, { fixed: "null", avoids: [] });
+                if (!map.has(b)) map.set(b, { fixed: "null", avoids: [] });
+                map.get(a).avoids.push(b);
+            });
+
+            const lines = [];
+            map.forEach((data, name) => {
+                if (data.fixed !== 'null' || data.avoids.length > 0) {
+                    const avoidStr = data.avoids.length > 0 ? data.avoids.join(', ') : 'null';
+                    lines.push(`${name} / ${data.fixed} / ${avoidStr}`);
+                }
+            });
+
+            return lines.join('\n');
+        }
+
+        function resetAllRules() {
+            if (confirm('모든 교사 비밀 규칙을 초기화하시겠습니까?')) {
+                state.fixedRules = [];
+                state.avoidRules = [];
+                document.getElementById('input-teacher-sheet').value = '';
+                parseTeacherSheet();
+            }
+        }
+
+        function renderRuleLists() {
+            const countLabel = document.getElementById('txt-rules-count');
+            if (countLabel) {
+                countLabel.innerText = `고정 ${state.fixedRules.length}건 / 거리두기 ${state.avoidRules.length}건`;
+            }
+
+            const fixedContainer = document.getElementById('list-fixed-rules');
+            if (fixedContainer) {
+                fixedContainer.innerHTML = '';
+                if (state.fixedRules.length === 0) {
+                    fixedContainer.innerHTML = '<span class="text-xs text-slate-400 italic">설정된 지정 자리가 없습니다.</span>';
+                } else {
+                    state.fixedRules.forEach((rule) => {
+                        const tag = document.createElement('div');
+                        tag.className = 'inline-flex items-center gap-2 bg-amber-100 text-amber-900 border border-amber-300 px-2.5 py-0.5 rounded-lg text-xs font-semibold mr-1.5 mb-1';
+                        tag.innerHTML = `<span>📍 <strong>${rule.studentName}</strong> → ${rule.row + 1}행 ${rule.col + 1}열</span>`;
+                        fixedContainer.appendChild(tag);
+                    });
+                }
+            }
+
+            const avoidContainer = document.getElementById('list-avoid-rules');
+            if (avoidContainer) {
+                avoidContainer.innerHTML = '';
+                if (state.avoidRules.length === 0) {
+                    avoidContainer.innerHTML = '<span class="text-xs text-slate-400 italic">설정된 거리두기 규칙이 없습니다.</span>';
+                } else {
+                    state.avoidRules.forEach((pair) => {
+                        const tag = document.createElement('div');
+                        tag.className = 'inline-flex items-center gap-2 bg-rose-100 text-rose-900 border border-rose-300 px-2.5 py-0.5 rounded-lg text-xs font-semibold mr-1.5 mb-1';
+                        tag.innerHTML = `<span>🚫 <strong>${pair[0]}</strong> ↔ <strong>${pair[1]}</strong></span>`;
+                        avoidContainer.appendChild(tag);
+                    });
+                }
+            }
+        }
+
+        function calculateSecretSeatAssignment() {
+            const grid = Array.from({ length: state.rows }, () => Array(state.cols).fill(null));
+
+            // Step 0: Mark disabled seats
+            let availableSeatCount = 0;
+            const availableCoords = [];
+            for (let r = 0; r < state.rows; r++) {
+                for (let c = 0; c < state.cols; c++) {
+                    if (state.disabledSeats.has(`${r}-${c}`)) {
+                        grid[r][c] = "(빈 자리)";
+                    } else {
+                        availableSeatCount++;
+                        availableCoords.push({ r, c });
+                    }
+                }
+            }
+
+            // Step 1: Evaluate All Rules and Find Best Minimum-Violation Placement
+            let bestGrid = null;
+            let minViolations = Infinity;
+            let bestUnfulfilledRules = [];
+
+            // Monte Carlo Solver (1500 Iterations)
+            const maxIterations = 1500;
+            
+            for (let iter = 0; iter < maxIterations; iter++) {
+                const tempGrid = grid.map(row => [...row]);
+                const placedStudents = new Set();
+                const unfulfilledRules = [];
+
+                // Attempt to place fixed students
+                state.fixedRules.forEach(rule => {
+                    if (rule.row < state.rows && rule.col < state.cols && tempGrid[rule.row][rule.col] === null) {
+                        tempGrid[rule.row][rule.col] = rule.studentName;
+                        placedStudents.add(rule.studentName);
+                    } else {
+                        unfulfilledRules.push(`📍 지정석 미보장: ${rule.studentName}님의 지정석(${rule.row + 1}행 ${rule.col + 1}열) 배치가 좌석 충돌로 반영되지 못했습니다.`);
+                    }
+                });
+
+                // Prepare remaining students list
+                const remainingStudents = state.students.filter(s => !placedStudents.has(s));
+                while (remainingStudents.length < availableSeatCount - placedStudents.size) {
+                    remainingStudents.push("(빈 자리)");
+                }
+
+                // Randomly shuffle unplaced students
+                const shuffled = [...remainingStudents].sort(() => Math.random() - 0.5);
+
+                // Fill remaining empty grid cells
+                let shuffleIdx = 0;
+                for (let r = 0; r < state.rows; r++) {
+                    for (let c = 0; c < state.cols; c++) {
+                        if (tempGrid[r][c] === null) {
+                            tempGrid[r][c] = shuffled[shuffleIdx] || "(빈 자리)";
+                            shuffleIdx++;
+                        }
+                    }
+                }
+
+                // Evaluate Penalty (Avoid Rule Violations)
+                let avoidViolationsCount = 0;
+                state.avoidRules.forEach(([s1, s2]) => {
+                    // Find position of s1 and s2 in tempGrid
+                    let pos1 = null, pos2 = null;
+                    for (let r = 0; r < state.rows; r++) {
+                        for (let c = 0; c < state.cols; c++) {
+                            if (tempGrid[r][c] === s1) pos1 = { r, c };
+                            if (tempGrid[r][c] === s2) pos2 = { r, c };
+                        }
+                    }
+
+                    if (pos1 && pos2) {
+                        const dr = Math.abs(pos1.r - pos2.r);
+                        const dc = Math.abs(pos1.c - pos2.c);
+                        if (dr <= 1 && dc <= 1) {
+                            avoidViolationsCount++;
+                            unfulfilledRules.push(`🚫 거리두기 미보장: ${s1}님과 ${s2}님이 가까운 자리(${pos1.r + 1}-${pos1.c + 1}, ${pos2.r + 1}-${pos2.c + 1})에 배치되었습니다.`);
+                        }
+                    }
+                });
+
+                const totalScore = unfulfilledRules.length;
+
+                if (totalScore < minViolations) {
+                    minViolations = totalScore;
+                    bestGrid = tempGrid;
+                    bestUnfulfilledRules = unfulfilledRules;
+
+                    // Perfect placement found!
+                    if (totalScore === 0) break;
+                }
+            }
+
+            state.lastViolations = bestUnfulfilledRules;
+            updateViolationAlertButton();
+            return bestGrid || grid;
+        }
+
+        function updateViolationAlertButton() {
+            const btn = document.getElementById('btn-violation-alert');
+            const txt = document.getElementById('txt-violation-count');
+            if (!btn || !txt) return;
+
+            if (state.lastViolations.length > 0) {
+                btn.classList.remove('hidden');
+                txt.innerText = `미준수 ${state.lastViolations.length}건`;
+            } else {
+                btn.classList.add('hidden');
+            }
+        }
+
+        function openViolationModal() {
+            const modal = document.getElementById('modal-violations');
+            const list = document.getElementById('list-unfulfilled-details');
+            if (!modal || !list) return;
+
+            list.innerHTML = state.lastViolations.map(v => `<li class="bg-slate-50 p-2 rounded border border-amber-200 text-slate-800 font-medium">${v}</li>`).join('');
+            modal.classList.remove('hidden');
+        }
+
+        function closeViolationModal() {
+            document.getElementById('modal-violations').classList.add('hidden');
+        }
+
+        function startSeatAssignment() {
+            if (state.students.length === 0) {
+                alert('학생 명단을 먼저 입력해 주세요.');
+                return;
+            }
+
+            if (state.isShuffling) return;
+            state.isShuffling = true;
+
+            const btn = document.getElementById('btn-start-assign');
+            btn.disabled = true;
+            btn.classList.add('opacity-75', 'cursor-not-allowed');
+
+            const finalAssignment = calculateSecretSeatAssignment();
+
+            const deskCards = document.querySelectorAll('.desk-card');
+            deskCards.forEach(card => card.classList.add('shuffling'));
+
+            let shuffleCount = 0;
+            const maxShuffles = 25;
+            const allNamesSample = [...state.students, "(빈 자리)", "🎲 섞는 중..."];
+
+            const interval = setInterval(() => {
+                shuffleCount++;
+                playTickSound();
+
+                deskCards.forEach(card => {
+                    const nameBox = card.querySelector('.desk-name');
+                    const randomName = allNamesSample[Math.floor(Math.random() * allNamesSample.length)];
+                    nameBox.innerText = randomName;
+                    nameBox.className = "desk-name text-xs sm:text-sm font-medium text-indigo-400 animate-pulse";
+                });
+
+                if (shuffleCount >= maxShuffles) {
+                    clearInterval(interval);
+                    revealFinalAssignment(finalAssignment);
+                }
+            }, 100);
+        }
+
+        function revealFinalAssignment(finalAssignment) {
+            const deskCards = document.querySelectorAll('.desk-card');
+            
+            playSuccessSound();
+
+            deskCards.forEach((card, index) => {
+                card.classList.remove('shuffling');
+                const r = parseInt(card.dataset.row);
+                const c = parseInt(card.dataset.col);
+                const isXMarked = state.disabledSeats.has(`${r}-${c}`);
+                const studentName = finalAssignment[r][c];
+
+                setTimeout(() => {
+                    const nameBox = card.querySelector('.desk-name');
+
+                    if (isXMarked) {
+                        nameBox.className = "desk-name text-xs sm:text-sm font-black text-rose-500 my-auto break-all px-1 flex flex-col items-center gap-0.5";
+                        nameBox.innerHTML = `<i class="fa-solid fa-xmark text-xl text-rose-500"></i><span>X (빈자리)</span>`;
+                        card.className = "desk-card bg-rose-50 border-2 border-rose-300 rounded-xl p-2 sm:p-3 text-center shadow-sm flex flex-col justify-between items-center min-h-[70px] sm:min-h-[85px] relative cursor-pointer";
+                    } else if (studentName === "(빈 자리)") {
+                        nameBox.innerText = studentName;
+                        nameBox.className = "desk-name text-xs sm:text-sm font-medium text-slate-400 italic";
+                        card.className = "desk-card bg-slate-50 border-2 border-dashed border-slate-200 rounded-xl p-2 sm:p-3 text-center flex flex-col justify-between items-center min-h-[70px] sm:min-h-[85px] relative cursor-pointer";
+                    } else {
+                        nameBox.innerText = studentName;
+                        nameBox.className = "desk-name text-sm sm:text-base font-extrabold text-slate-800 my-auto break-all px-1";
+                        card.className = "desk-card bg-amber-50/60 border-2 border-deskBorder rounded-xl p-2 sm:p-3 text-center shadow-md flex flex-col justify-between items-center min-h-[70px] sm:min-h-[85px] relative transform transition hover:scale-105 cursor-pointer";
+                    }
+
+                    if (index === deskCards.length - 1) {
+                        state.isShuffling = false;
+                        const btn = document.getElementById('btn-start-assign');
+                        btn.disabled = false;
+                        btn.classList.remove('opacity-75', 'cursor-not-allowed');
+
+                        confetti({
+                            particleCount: 80,
+                            spread: 70,
+                            origin: { y: 0.6 }
+                        });
+                    }
+                }, index * 40);
+            });
+        }
+    </script>
+</body>
+</html>
